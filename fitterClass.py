@@ -17,8 +17,10 @@ https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.curve_fit.ht
 
 class funcFitter:
     
-    def __init__(self, data:np.ndarray, n_point:int=5, estimators:list=["lm"]):
+    def __init__(self, subject:str, manobra:str, data:np.ndarray, n_point:int=5, estimators:list=["lm"]):
         self.n_point = n_point
+        self.manobra = manobra
+        self.subject = subject
         self.estimators = estimators
         self.pressures = data[:,0] ##Selecionar somente as PEEP
         self.volumes = data[:,1] ##Selecionar somente os volumes minimos
@@ -37,13 +39,15 @@ class funcFitter:
         return mean_squared_error(np.array(self.volumes), np.array(hat_volumes))
         
     def _make_fit_report(self, funcs:list, estimators:list, n_interp_point:int):
+        subject = []
+        n_point = []
         interp_data = []
         interp_run = []
         data = []
         run = []
         
-        cols = ["function", "function_name", "estimator", "error", "param"]
-        interp_cols = ["function", "function_name", "estimator", "error", "param", "interp_point", "interp_pressure", "interp_volume"]
+        cols = ["subject","manobra","n_point","function", "function_name", "estimator", "error", "param"]
+        interp_cols = ["subject","manobra","n_point", "function", "function_name", "estimator", "error", "param", "interp_point", "interp_pressure", "interp_volume"]
         
         for func in funcs:
             for estimator in self.estimators:
@@ -57,6 +61,9 @@ class funcFitter:
                                                          method=estimator)
                             err = self._get_error(func=func, parameters=parameters)
 
+                            interp_run.append(self.subject)
+                            interp_run.append(self.manobra)
+                            interp_run.append(self.n_point)
                             interp_run.append(func)
                             interp_run.append(func.__name__)
                             interp_run.append(estimator)
@@ -78,6 +85,9 @@ class funcFitter:
                                                      method=estimator)
                         err = self._get_error(func=func, parameters=parameters)
 
+                        run.append(self.subject)
+                        run.append(self.manobra)
+                        run.append(self.n_point)
                         run.append(func)
                         run.append(func.__name__)
                         run.append(estimator)
