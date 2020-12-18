@@ -4,7 +4,7 @@ from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
 
 def select_best(df:pd.DataFrame):
-    best_fit = df.sort_values(by = "error").reset_index().iloc[0]
+    best_fit = df.sort_values(by = "error").reset_index().iloc[-1]
 
     a = best_fit["param"][0]
     b = best_fit["param"][1]
@@ -30,7 +30,7 @@ def exponential_cicle(x, a, b, c):
     return -a*np.exp(-b*x)+c
 
 
-def find_best_b(df:pd.DataFrame, raw_pressures:np.ndarray,b_percentage_range:tuple=(0.05,0.125), step:float=0.001, plot_figure:bool=True):
+def find_best_b(df:pd.DataFrame, raw_pressures:np.ndarray, b_percentage_range:tuple=(0.05,0.125), step:float=0.001, plot_figure:bool=True):
 
     params, best_fit_func = select_best(df)
 

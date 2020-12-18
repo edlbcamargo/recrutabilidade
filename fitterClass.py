@@ -17,7 +17,8 @@ https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.curve_fit.ht
 
 class funcFitter:
     
-    def __init__(self, subject:str, manobra:str, data:np.ndarray, n_point:int=5, estimators:list=["lm"]):
+    def __init__(self, subject:str, manobra:str, raw_data, data:np.ndarray, n_point:int=5, estimators:list=["lm"]):
+        self.raw_data = raw_data.copy()
         self.n_point = n_point
         self.manobra = manobra
         self.subject = subject
@@ -46,8 +47,8 @@ class funcFitter:
         data = []
         run = []
         
-        cols = ["subject","manobra","n_point","function", "function_name", "estimator", "error", "param"]
-        interp_cols = ["subject","manobra","n_point", "function", "function_name", "estimator", "error", "param", "interp_point", "interp_pressure", "interp_volume"]
+        cols = ["subject","manobra","n_point","function", "function_name", "estimator", "error", "param", "raw_data"]
+        interp_cols = ["subject","manobra","n_point", "function", "function_name", "estimator", "error", "param", "interp_point", "interp_pressure", "interp_volume","raw_data"]
         
         for func in funcs:
             for estimator in self.estimators:
@@ -72,6 +73,7 @@ class funcFitter:
                             interp_run.append(point)
                             interp_run.append(self.interp_pressures)
                             interp_run.append(self.interp_volumes)
+                            interp_run.append(self.raw_data)
                             interp_data.append(interp_run)
                             interp_run = []
                             
@@ -93,6 +95,7 @@ class funcFitter:
                         run.append(estimator)
                         run.append(err)
                         run.append(parameters)
+                        run.append(self.raw_data)
                         data.append(run)
                         run = []
                         
