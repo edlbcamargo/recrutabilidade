@@ -35,10 +35,16 @@ class funcFitter:
         self.interp_volumes = interp_func(self.interp_pressures)
         
     def _get_error(self, func, parameters):
-        hat_volumes = func(self.pressures, *parameters)
+        hat_volumes = func(self.pressures[:self.n_point], *parameters)
+        if self.manobra == 'C' and self.subject == 'mra26' and self.n_point == 3:
+            print(f'vols: {np.array((self.volumes[:self.n_point],hat_volumes))}')
+            print(f'raw: {self.raw_data}')
+            print(f'erro: {mean_squared_error(np.array(self.volumes[:self.n_point]), np.array(hat_volumes),squared=False)}')
         
-        return mean_squared_error(np.array(self.volumes), np.array(hat_volumes))
+        return mean_squared_error(np.array(self.volumes[:self.n_point]), np.array(hat_volumes),squared=False)
         
+    # monta o dataframe da combinação porco/manobra/n_passos
+    # pode ou não ser interpolado
     def _make_fit_report(self, funcs:list, estimators:list, n_interp_point:int):
         subject = []
         n_point = []
@@ -50,6 +56,9 @@ class funcFitter:
         cols = ["subject","manobra","n_point","function", "function_name", "estimator", "error", "param", "raw_data"]
         interp_cols = ["subject","manobra","n_point", "function", "function_name", "estimator", "error", "param", "interp_point", "interp_pressure", "interp_volume","raw_data"]
         
+        #meus_bounds = ([-np.inf,100,-np.inf,-np.inf],[np.inf,5000,np.inf,np.inf])
+        meus_bounds = ([-np.inf,100,10,2],[np.inf,5000,40,15])
+        
         for func in funcs:
             for estimator in self.estimators:
                 if self.interpolate:
@@ -59,7 +68,8 @@ class funcFitter:
                             parameters, pcov = curve_fit(func, 
                                                          self.interp_pressures,  
                                                          self.interp_volumes, 
-                                                         method=estimator)
+                                                         method=estimator,
+                                                         bounds=meus_bounds)
                             err = self._get_error(func=func, parameters=parameters)
 
                             interp_run.append(self.subject)
