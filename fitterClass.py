@@ -22,7 +22,7 @@ Atributos:
 
 - A variável `raw_data` contém uma cópia com todos os dados de pressão e volume.
 
-- As váriaveis `subject`, `manobra`, e `passo` servem para identificação do caso, respectivamente, nome do porco, manobra e passo.
+- As váriaveis `subject`, `manobra`, e `n_point` servem para identificação do caso, respectivamente, nome do porco, manobra e passo. Exemplo, na manobra D existem 5 passos, na C existem 4 e na B existem 3.
 
 - A variável `pmin` contém a PEEP mínima utilzida no fit das sigmoids e exponenciais
 
@@ -36,19 +36,31 @@ _interpolate: cria as versões interpoladas das variáveis `pressure` (`interp_p
 
 _get_error: Calcula o "root mean square", volume fitado vs volume
 
+_make_fit_report: Constrói o dataframe que contém a análise do caso (codificado por subject, manobra, n_point). Cada linha do dataframe contém todas informações necessárias daquele caso em específico.
+
+fit: Essa função funciona como uma interface para o usuário, chamando a função `_make_fit_report`, setando os parâmetros necessarios e retornando um DataFrame.
+
+make_plot: Plota os "n" melhores casos do dataframe retornado pela função `fit`. Os melhores são definidos como os que têm os menores erros.
+
 """
 
 class funcFitter:
     
     def __init__(self, subject:str, manobra:str, raw_data, data:np.ndarray, n_point:int=5, estimators:list=["lm"]):
-        self.raw_data = raw_data.copy()
-        self.n_point = n_point
-        self.manobra = manobra
-        self.subject = subject
-        self.estimators = estimators
-        self.pressures = data[:,0] ##Selecionar somente as PEEP
-        self.volumes = data[:,1] ##Selecionar somente os volumes minimos
-        self.pmin = min(self.pressures)
+        
+        """
+            A variável `raw_data` está formatada de forma que a coluna 0 contém as pressões e a 1 contém os volumes.
+            A variável `data` contém somente os pontos minímos dos passos, selecionados a partir do raw da seguinte forma: data = raw_data[0::2,:].
+        """
+        
+        self.raw_data    = raw_data.copy()     # Copia dos dados raw.
+        self.n_point     = n_point             # Quantidade de Passos (Exemplo: Manobra C tem 4 passos).
+        self.manobra     = manobra             # Manobra.
+        self.subject     = subject             # Nome do porco.
+        self.estimators  = estimators          # Lista de estimadores.
+        self.pressures   = data[:,0]           # Seleciona somente as PEEP de cada passo.
+        self.volumes     = data[:,1]           # Seleciona somente os volumes minimos de cada passo
+        self.pmin        = min(self.pressures) #
         self.interpolate = False
         
     def _interpolate(self, n_interp_point:int):
@@ -58,16 +70,9 @@ class funcFitter:
         self.interp_volumes = interp_func(self.interp_pressures)
         
     def _get_error(self, func, parameters):
-        hat_volumes = func(self.pressures[:self.n_point], *parameters)
-        if self.manobra == 'C' and self.subject == 'mra26' and self.n_point == 3:
-            print(f'vols: {np.array((self.volumes[:self.n_point],hat_volumes))}')
-            print(f'raw: {self.raw_data}')
-            print(f'erro: {mean_squared_error(np.array(self.volumes[:self.n_point]), np.array(hat_volumes),squared=False)}')
-        
+        hat_volumes = func(self.pressures[:self.n_point], *parameters)        
         return mean_squared_error(np.array(self.volumes[:self.n_point]), np.array(hat_volumes),squared=False)
         
-    # monta o dataframe da combinação porco/manobra/n_passos
-    # pode ou não ser interpolado
     def _make_fit_report(self, funcs:list, estimators:list, n_interp_point:int):
         subject = []
         n_point = []
@@ -135,7 +140,6 @@ class funcFitter:
                     except Exception as e:
                         pass
                
-    
         if self.interpolate:             
             return pd.DataFrame(interp_data, columns=interp_cols)    
         else:
@@ -148,27 +152,13 @@ class funcFitter:
         self.interpolate = interpolate
 
         return self._make_fit_report(funcs=funcs, estimators=self.estimators, n_interp_point=n_interp_point)
-   
-    def summary(self):
-        print(f'Interpolated: ({self.interpolate})')
-        print(f'Data pressure interval: ({self.pressures[0]}, {self.pressures[-1]})')
-        print(f'Data volume interval:   ({self.volumes[0]}, {self.volumes[-1]})')
-        print('Sigmoid parameters: a=%5.2f, b=%5.2f, c=%5.2f, d=%5.2f' % tuple(self.parameters))
-
-    def get_parameters(self):
-        try:
-            if self.interpolate:
-                return [self.n_point, self.n_interp_point, self.interp_method, self.estimator, self.parameters[1]]
-            else:
-                return [self.n_point, self.interp_method, self.estimator, self.parameters[1]]
-            
-        except Exception as e:
-            print("Fit before getting parameters:\n{e}")
         
     def make_plot(self, df:pd.DataFrame, n_best = 6):
+        
         if len(df) == 0:
             print("Does not exist available plot")
             return None
+        
         n_col = 2
         n_row = int(np.ceil(n_best/n_col))
         

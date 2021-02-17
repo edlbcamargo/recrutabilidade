@@ -15,8 +15,8 @@ def select_best(df:pd.DataFrame):
     
     return best_fit["param"], best_fit_func
 
-# pressure é int ????
-def find_zero(offSet:float, best_fit_func, params:np.ndarray, pressure:int, learning_rate=0.01):
+
+def find_zero(offSet:float, best_fit_func, params:np.ndarray, pressure, learning_rate=0.01):
     
     volume=1000
     
@@ -33,7 +33,6 @@ def find_zero(offSet:float, best_fit_func, params:np.ndarray, pressure:int, lear
 def exponential_cicle(x, a, b, c):
     return -a*np.exp(-b*x)+c
 
-
 def calc_fit_error(fit_func, params, xdata, ydata):
     error_lst = []
     for idx,x in enumerate(xdata):
@@ -43,21 +42,19 @@ def calc_fit_error(fit_func, params, xdata, ydata):
     return erro
 
 def find_best_b(ser, b_percentage_range:tuple=(0.95,1.05), step:float=0.0001):
-    
+   
     params = ser["param"]
     fit_func = ser["function"]
-    #raw_data = ser["raw_data"]
-   
-    a = params[0] # sigmoid(x, a, b, c, d): a + b/(1 + np.exp(-(x-c)/d))
-    b = params[1]
-    c = params[2]
-    d = params[3]
+    
+    #Especifico para sigmoid
+    # sigmoid(x, a, b, c, d): a + b/(1 + np.exp(-(x-c)/d))   
+    a, b, c, d = params 
     
     b_esperado = np.exp(c/d)/(b)
     
     volume_ZEEP_esperado = fit_func(0, *params)
     
-    print( (b_esperado,[0,volume_ZEEP_esperado]) )
+    #print( (b_esperado,[0,volume_ZEEP_esperado]) )
     
     return b_esperado, [0, volume_ZEEP_esperado]
     
