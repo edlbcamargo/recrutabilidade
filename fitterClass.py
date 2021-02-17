@@ -15,6 +15,29 @@ Função usada para fittar os dados.
 https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.curve_fit.html
 """
 
+"""
+Atributos:
+
+- As variáveis `pressure` e `volume` contém as pressões e volumes utilizados para fitar as funções sigmoid e exponencial. Espera-se que para um pulmão saudável o melhor fit seja exponencial, enquanto que para o doente espera-se um melhor fit da sigmoid. !!Entretanto vale notar que passamos somente os pontos de volume e pressão mínimo (PEEP) de cada passo!!.
+
+- A variável `raw_data` contém uma cópia com todos os dados de pressão e volume.
+
+- As váriaveis `subject`, `manobra`, e `passo` servem para identificação do caso, respectivamente, nome do porco, manobra e passo.
+
+- A variável `pmin` contém a PEEP mínima utilzida no fit das sigmoids e exponenciais
+
+- A variável `estimators` é uma lista de diferentes estimadores para o fit das sigmoids e exponenciais. Exemplo: "lm" e "dogbox".
+
+- A variável `interpolate` !!!não foi testada!!! e está setada como False, isto é, !!!No momento não estamos interpolando!!!. Ela é responsável pela interpolação dos dados visando melhorar o fit por meio da criação de mais pontos. 
+
+Funções:
+
+_interpolate: cria as versões interpoladas das variáveis `pressure` (`interp_pressures`) e `volumes` (`interp_volumes`).
+
+_get_error: Calcula o "root mean square", volume fitado vs volume
+
+"""
+
 class funcFitter:
     
     def __init__(self, subject:str, manobra:str, raw_data, data:np.ndarray, n_point:int=5, estimators:list=["lm"]):
