@@ -54,7 +54,7 @@ class funcFitter:
         """
         
         self.raw_data    = raw_data.copy()     # Copia dos dados raw.
-        self.qtd_steps       = qtd_steps       # Quantidade de Passos (Exemplo: Manobra C tem 4 passos).
+        self.qtd_steps   = qtd_steps           # Quantidade de Passos (Exemplo: Manobra C tem 4 passos).
         self.manobra     = manobra             # Manobra.
         self.subject     = subject             # Nome do porco.
         self.estimators  = estimators          # Lista de estimadores.
@@ -116,7 +116,7 @@ class funcFitter:
                         except Exception as e:
                             pass
                 else:
-                    #try:
+                    try:
                         parameters, pcov = curve_fit(f      = model.function, 
                                                      xdata  = self.pressures[:self.qtd_steps],  
                                                      ydata  = self.volumes[:self.qtd_steps], 
@@ -138,8 +138,8 @@ class funcFitter:
                         data.append(run)
                         run = []
                         
-                    #except Exception as e:
-                    #    pass
+                    except Exception as e:
+                        pass
                
         if self.interpolate:             
             return pd.DataFrame(interp_data, columns=interp_cols)    
@@ -162,6 +162,7 @@ class funcFitter:
         
         n_col = 2
         n_row = int(np.ceil(n_best/n_col))
+        colors = ["b","g","r","m","y"]
         
         df.reset_index(drop = True, inplace = True)
         best_fits= df["error"].nsmallest(n_best).index
@@ -172,16 +173,17 @@ class funcFitter:
             new_pressures = range(0,100,7)
 
             _, data = row
-            new_pressures = range(0,100,7)
             ax.set_title(f"Model: {data['function_name']} Error: {round(data['error'], 2)}")
-            ax.scatter(self.pressures, self.volumes, c = 'r', label = "Original")
+            for fst_run, c in zip(data["raw_data"][::2], colors):
+                ax.scatter(fst_run[0], fst_run[1], c=c)
+    
             if self.interpolate:
                 ax.scatter(data["interp_pressure"], data["interp_volume"], c = 'k', marker = '.', label = "Interpolated")
                 ax.text(0.98, 0.6, f"n interp points: {data['interp_point']}",
                 horizontalalignment='right',
                 verticalalignment='bottom',
                 transform = ax.transAxes)
-            ax.scatter(new_pressures, data["function"](new_pressures, *data["param"]), c = 'g', marker = '+', label = "Fit")
+            ax.scatter(new_pressures, data["model"].function(new_pressures, *data["param"]), c = 'g', marker = '+', label = "Fit")
             ax.set_xlabel('Pressure')
             ax.set_ylabel('Volume')
             ax.legend(fancybox=True, framealpha=1, shadow=True, borderpad=1)

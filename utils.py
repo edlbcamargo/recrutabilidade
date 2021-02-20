@@ -80,7 +80,7 @@ def plot_exponentials(ser, aux_func):
         parameters, pcov = curve_fit(f      = func, 
                                      xdata  = run[:2,0],  
                                      ydata  = run[:2,1], 
-                                     method = "trf",
+                                     method = "dogbox",
                                      #p0     = model.inits,
                                      bounds = ([-np.inf,-np.inf],[np.inf,model_volumes[-1]]),
                                     )
