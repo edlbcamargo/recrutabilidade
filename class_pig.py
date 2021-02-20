@@ -1,3 +1,9 @@
+"""
+É necessário importar essa classe para ler os arquivos porquinho*.pickle
+
+Responsável por formatar o objeto Porco ... As funções com "double underscore" permitem trabalhar com objeto de forma um pouco mais amigavél.
+"""
+
 class pigClass:
     
     def __init__(self, name:str):
