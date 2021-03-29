@@ -16,6 +16,33 @@ Transforma Image em Array
 def I2A (Image):
     return sitk.GetArrayFromImage(Image)
 
+def calcula_volume_ar(pulmao,v_voxel):
+    pulmao_array = np.stack(pulmao)
+    # limita valores de HU para faixa esperada (relacionada com densidade do pulmão)
+    pulmao_array[np.array(pulmao_array)>0] = 0
+    pulmao_array[np.array(pulmao_array)<-1000] = -1000
+    
+    Ivox = np.array(pulmao_array.sum()).sum()
+    Var_vox = v_voxel*(-Ivox/1000)
+    return Var_vox
+
+
+def calcula_volume_pasta(pasta_in, animal='', mostraImagens = False, threshold = 200):
+    imagens_in = lePastaDICOM(pasta_in)
+    nl,nc,nimagens = imagens_in.GetSize()
+    slice_img = int(nimagens/2)
+    df_in = SegmentaPulmaoCompleto(imagens_in, threshold = threshold)
+    v_voxel_mL_in = np.prod(imagens_in.GetSpacing())/1000
+    volume_ar_in = calcula_volume_ar(df_in.imagem_pulmao.values,v_voxel_mL_in)
+    print(f'{volume_ar_in} mL')
+    if mostraImagens:
+        fig = mostraCortesDICOM(imagens_in,slice_img,8,colorbar=True)
+        _= fig.suptitle('TC - ' + animal, fontsize=16)
+        fig = mostraCortes(df_in.pulmao.values,slice_img,8,colorbar=True)
+        _= fig.suptitle('Segmentação do pulmão - ' + animal, fontsize=16)
+        
+    return volume_ar_in,imagens_in,df_in
+
 '''
 Lê uma pasta com arquivos DICOM no formato .ima ou .dcm
 '''
@@ -42,15 +69,58 @@ def mostraCortesDICOM(imagensDICOM,idx_inicial,n_cortes,colorbar=False):
 '''
 Mostra cortes de um array de imagens
 '''
-def mostraCortes(imagens,idx_inicial,n_cortes,colorbar=False):
-    fig = plt.figure(figsize=(20,5*n_cortes/2))
+def mostraCortes(imagens,idx_inicial=0,n_cortes=-1,colorbar=False,axis=False,n_colunas=4):
+    if (imagens.ndim == 1):
+        nimagens = imagens.shape[0]
+    else:
+        nimagens,nl,nc = imagens.shape
+    if (n_cortes == -1):                   # n_cortes=-1 -> mostra todas as imagens
+        n_cortes = nimagens
+    n_cortes = min(n_cortes,nimagens-idx_inicial)
+    
+    fig = plt.figure(figsize=(20,5*n_cortes/n_colunas))
     for idx in range(n_cortes):
-        plt.subplot(int(n_cortes/2)+1,2,idx+1)
+        plt.subplot(int(n_cortes/n_colunas)+1,n_colunas,idx+1)
         plt.imshow(imagens[idx+idx_inicial])
         plt.title(f'slice {idx+idx_inicial}')
+        if not(axis):
+            plt.axis('off')
         if colorbar:
             plt.colorbar()
     return fig
+
+'''
+Esta funcao segmenta o pulmao e retorna uma imagem do pulmao aerado
+'''
+def SegmentaPulmaoAerado3D(imagens,lower=-2048,upper=-200,maxvalue=-100):
+    nl,nc,nimagens = imagens.GetSize()
+    
+    # tirando fundo
+    lstSeeds = []
+    for idx in range(nimagens):
+        lstSeeds.append( (0,0,idx) )
+        lstSeeds.append( (511,0,idx) )
+        lstSeeds.append( (511,511,idx) )
+        lstSeeds.append( (0,511,idx) )
+    
+    imagem_fundo = sitk.ConnectedThreshold(imagens, seedList=lstSeeds, lower=lower, upper=upper)
+    pulmao_array = ( I2A(imagens) < maxvalue ) ^ I2A(imagem_fundo)
+    
+    #abrindo
+    raio = (4,4,4)
+    pulmao_erode = sitk.BinaryErode(A2I(pulmao_array*1), raio)
+    pulmao_dilate = sitk.BinaryDilate(pulmao_erode, raio)
+    
+    #fechando
+    pulmao_dilate1 = sitk.BinaryDilate(pulmao_dilate, raio)
+    pulmao_erode1 = sitk.BinaryErode(pulmao_dilate1, raio)
+    
+
+    #mascara
+    #masc_lung_seg = sitk.GetArrayFromImage(pulmao_erode1) == 1
+    masc_lung_seg = pulmao_erode1
+    
+    return masc_lung_seg
 
 '''
 Esta funcao segmenta o pulmao e retorna um DataFrame com os seguintes dados:
@@ -68,7 +138,7 @@ def SegmentaPulmaoAerado(imagem,lower=-2048,upper=-200,maxvalue=-100):
         imagem_fundo = sitk.ConnectedThreshold(image1 = imagem[:,:,count], seedList=lstSeeds, lower=lower, upper=upper)
         imagem_fundo_array = sitk.GetArrayFromImage(imagem_fundo)
         seg_array = sitk.GetArrayFromImage(imagem[:,:,count]) < maxvalue
-        pulmao_array = seg_array ^ imagem_fundo_array
+        pulmao_array = seg_array ^ imagem_fundo_array # Cuidado: (^ = XOR)
         
         #abrindo
         raio = (4,4)
@@ -102,7 +172,7 @@ posterior está colapsada.
 '''
 def SegmentaPulmaoCompleto(imagens, threshold = 200, debug = False, 
                              raio_abertura = (3,3), raio_fechamento = (60,60), raio_dilat = (5,5),
-                             altura_limite_aerado = -1):
+                             altura_limite_aerado = -1, altura_pulmao=0.5, altura_traqueia=0.8):
     biblioteca = {'imagem':[], 'mascara_ar':[], 'imagem_ar':[]}
     nl,nc,nimagens = imagens.GetSize()
     print(f'Tamanho: {nl} {nc} {nimagens}')
@@ -118,7 +188,18 @@ def SegmentaPulmaoCompleto(imagens, threshold = 200, debug = False,
         biblioteca['imagem_ar'].append(imagem_pulmao)
     df = pd.DataFrame(biblioteca)
     
-  
+    # separa intestino
+    pulmao_completo = SeparaTecidoConectado(df.mascara_ar.values,label=2,altura=altura_pulmao)
+    
+    # separa traqueia
+    mascara_traqueia_Image = SegmentaTraqueia(imagens, pulmao_completo, altura=altura_traqueia)
+    mascara_soh_pulmao = A2I( I2A(pulmao_completo) - I2A(mascara_traqueia_Image) ) == 1
+    
+    #incluindo no df
+    df["pulmao"] = I2A(mascara_soh_pulmao).tolist()
+    df["traqueia"] = I2A(mascara_traqueia_Image).tolist()
+    df["imagem_pulmao"] = (I2A(mascara_soh_pulmao)*I2A(imagens)).tolist()
+
     return df
 
 
@@ -143,7 +224,7 @@ def SeparaTecidoConectado(mascaras,label,altura=0.5):
     return mascara_tecido_Image
     
 
-def SegmentaTraqueia(imagens_ct, mascara_pulmao, threshold = -900,altura=0.9,label = 1):
+def SegmentaTraqueia(imagens_ct, mascara_pulmao, threshold = -900,altura=0.8,label = 1):
     imagens_pulmao = I2A(imagens_ct)*I2A(mascara_pulmao)
     
     mask_traqueia = imagens_pulmao<threshold
@@ -153,7 +234,7 @@ def SegmentaTraqueia(imagens_ct, mascara_pulmao, threshold = -900,altura=0.9,lab
     nl,nc,nimagens = imagens_ct.GetSize()
     seed_lst = []
     inicio = int(np.floor(nimagens*altura))
-    print((inicio,nimagens))
+    #print((inicio,nimagens))
     for idx in range(inicio,nimagens): # pega uma semente em cada slice
         imagem_slice = I2A(mask_traqueia1[:,:,idx])
         result = np.where(imagem_slice == label)
@@ -164,7 +245,7 @@ def SegmentaTraqueia(imagens_ct, mascara_pulmao, threshold = -900,altura=0.9,lab
                                                    upper=label,
                                                    replaceValue=1,
                                                    connectivity=0)
-    mask_traqueia2 = sitk.BinaryDilate(mascara_tecido_Image, (2,2,1))
+    mask_traqueia2 = sitk.BinaryDilate(mascara_tecido_Image, (4,4,1))
 
     mask_traqueia3 = sitk.BinaryDilate(mask_traqueia2, (5,5,10))
     mask_traqueia4 = sitk.BinaryErode(mask_traqueia3, (5,5,10))
