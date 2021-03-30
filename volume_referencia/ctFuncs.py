@@ -252,6 +252,80 @@ def SegmentaTraqueia(imagens_ct, mascara_pulmao, threshold = -900,altura=0.8,lab
 
     
     return mask_traqueia4
+
+'''
+FUNÇÃO NÃO FINALIZADA!
+'''
+def SegmentaPulmaoCompleto3D(imagens, threshold = 300, debug = False, 
+                             raio_abertura = (3,3), raio_fechamento = (60,60), raio_dilat = (5,5),
+                             altura_limite_aerado = -1):
+    nl,nc,nimagens = imagens.GetSize()
+    
+    # tirando fundo
+    lstSeeds = []
+    for ids in range(nimagens):
+        lstSeeds.append( (0,0,ids) )
+        lstSeeds.append( (511,0,ids) )
+        lstSeeds.append( (511,511,ids) )
+        lstSeeds.append( (0,511,ids) )    
+        # inclui toda a lateral da imagem como sementes para incluir colchão:
+        for idy in range(5,nc,5):
+            lstSeeds.append((0,idy,ids))
+            lstSeeds.append((nl-1,idy,ids))
+
+    # encontra fundo
+    imagens_fundo = sitk.ConnectedThreshold(image1=imagens, seedList=lstSeeds, lower=-1100, upper=-200)
+    imagens_fundo_dilatada = sitk.BinaryDilate(imagens_fundo, (30,30,10))
+    
+    # encontra ossos
+    imagens_ossos = (imagens > threshold)
+    # remove constraste no coração
+    imagens_ossos = imagens_ossos - (imagens > 1000)
+    raio = (2,2,0)
+    imagens_ossos= sitk.BinaryErode(imagens_ossos, raio)
+    imagens_ossos = sitk.BinaryDilate(imagens_ossos, raio)
+    # junta buracos
+    raio = (20,20,10)
+    imagens_ossos = sitk.BinaryDilate(imagens_ossos, raio)
+    imagens_ossos = sitk.BinaryErode(imagens_ossos, raio)
+    
+    # junta ossos com fundo
+    imagens_fundo_ossos = imagens_ossos + imagens_fundo_dilatada
+    
+    
+    pulmao_aerado = ((imagens < -100) - imagens_fundo_dilatada) == 1
+    raio = (2,2,1)
+    pulmao_aerado = sitk.BinaryErode(pulmao_aerado, raio)
+    pulmao_aerado = sitk.BinaryDilate(pulmao_aerado, raio)
+    raio = (5,5,5)
+    pulmao_aerado = sitk.BinaryDilate(pulmao_aerado, raio)
+    pulmao_aerado = sitk.BinaryErode(pulmao_aerado, raio)
+    
+    caixa = (pulmao_aerado + imagens_ossos) == 1
+    raio = (8,8,8)
+    caixa = sitk.BinaryDilate(caixa, raio)
+    caixa = sitk.BinaryErode(caixa, raio)
+    
+    fundo = imagens_fundo_dilatada
+    raio = (2,2,0)
+    for idx in range(10):
+        fundo = (sitk.BinaryDilate(fundo, raio) - caixa ) == 1
+    
+    fundo = (fundo + imagens_fundo_dilatada) > 1
+    
+    fundo = ( fundo + imagens_ossos ) >= 1
+
+    raio = (25,25,3)
+    fundo = sitk.BinaryDilate(fundo, raio)
+    fundo = sitk.BinaryErode(fundo, raio)
+    
+    
+
+    mostraCortes(I2A(fundo+imagens_ossos))
+    #plt.imshow(I2A(imagens_ossos)[44])
+    
+    return fundo
+    
     
     
     
