@@ -466,13 +466,12 @@ def encontra_pulmao(imagem, threshold = -100, debug = False, raio_abertura = (4,
 def exponencial_simples(Paw,K,Vmax):
     return Vmax*(1-np.exp(-K*Paw))
 
-def ajusta_exponencial_recrutamento(pasta_pos, pasta_R3, animal, estimator = 'lm', debug = True):
+def ajusta_exponencial_recrutamento(pasta_pos, pasta_R3, animal, estimator = 'lm', debug = True, pressoes = [0, 24, 45]):
     # calcula volume pulmonar das CTs
-    volume_ar_R3,_,_ = calcula_volume_pasta(pasta_R3, animal=animal)
     volume_ar_pos,_,_ = calcula_volume_pasta(pasta_pos, animal=animal)
+    volume_ar_R3,_,_ = calcula_volume_pasta(pasta_R3, animal=animal)
     
     # ajustando modelo exponencial
-    pressoes = [0, 24, 45] # em cmH2O
     volumes = [0, volume_ar_pos, volume_ar_R3]
     p0 = [0.05, 4000]
     
@@ -484,9 +483,9 @@ def ajusta_exponencial_recrutamento(pasta_pos, pasta_R3, animal, estimator = 'lm
         # mostrando gráfico
         p_teste = range(0,100)
         v_teste = exponencial_simples(p_teste,*parameters)
-        plt.plot(p_teste,v_teste,'b:',label='ajustado')
-        plt.scatter(pressoes,volumes,label='dados')
-        plt.xlabel('Pressão [cmH2O]')
+        plt.plot(p_teste,v_teste,'b:',label='fit')
+        plt.scatter(pressoes,volumes,label='raw')
+        plt.xlabel('Pressure [cmH2O]')
         plt.ylabel('Volume [mL]')
         plt.title(f'{animal}: K = {parameters[0]:.4f}; Vmax = {parameters[1]:.1f}')
         plt.legend()
