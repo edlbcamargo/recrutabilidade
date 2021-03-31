@@ -3,6 +3,8 @@ import matplotlib.pyplot as plt
 import os 
 import pandas as pd
 import numpy as np
+from scipy.optimize import curve_fit
+
 
 '''
 Transforma Array em Image
@@ -190,14 +192,15 @@ def SegmentaPulmaoCompleto(imagens, threshold = 200, debug = False,
     
     # separa intestino
     pulmao_completo = SeparaTecidoConectado(df.mascara_ar.values,label=2,altura=altura_pulmao)
+    mascara_soh_pulmao = pulmao_completo
     
-    # separa traqueia
-    mascara_traqueia_Image = SegmentaTraqueia(imagens, pulmao_completo, altura=altura_traqueia)
-    mascara_soh_pulmao = A2I( I2A(pulmao_completo) - I2A(mascara_traqueia_Image) ) == 1
+    # separa traqueia # NÃO FUNCIONA SEMPRE (EX. MRA26). TESTAR DEPOIS...
+    #mascara_traqueia_Image = SegmentaTraqueia(imagens, pulmao_completo, altura=altura_traqueia)
+    #mascara_soh_pulmao = A2I( I2A(pulmao_completo) - I2A(mascara_traqueia_Image) ) == 1
     
     #incluindo no df
     df["pulmao"] = I2A(mascara_soh_pulmao).tolist()
-    df["traqueia"] = I2A(mascara_traqueia_Image).tolist()
+    #df["traqueia"] = I2A(mascara_traqueia_Image).tolist()
     df["imagem_pulmao"] = (I2A(mascara_soh_pulmao)*I2A(imagens)).tolist()
 
     return df
@@ -446,4 +449,47 @@ def encontra_pulmao(imagem, threshold = -100, debug = False, raio_abertura = (4,
             ax.axis('off')
     
     return imagem_pulmao5, imagem_pulmao_seg
+
+
+
+
+###############################################################################################
+###############################################################################################
+###############################################################################################
+###############################################################################################
+# Ajuste do modelo exponencial nas CTs durante recrutamento
+
+# Modelo exponencial simples de curva PV pulmonar
+# Volume = Vmax*(1-e^(-K*Paw))
+# Paw = pressão na via aérea
+# K = 'constante de tempo' da exponencial
+def exponencial_simples(Paw,K,Vmax):
+    return Vmax*(1-np.exp(-K*Paw))
+
+def ajusta_exponencial_recrutamento(pasta_pos, pasta_R3, animal, estimator = 'lm', debug = True):
+    # calcula volume pulmonar das CTs
+    volume_ar_R3,_,_ = calcula_volume_pasta(pasta_R3, animal=animal)
+    volume_ar_pos,_,_ = calcula_volume_pasta(pasta_pos, animal=animal)
+    
+    # ajustando modelo exponencial
+    pressoes = [0, 24, 45] # em cmH2O
+    volumes = [0, volume_ar_pos, volume_ar_R3]
+    p0 = [0.05, 4000]
+    
+    
+    parameters, pcov = curve_fit(exponencial_simples, pressoes, volumes, method=estimator, p0=p0)
+    if debug:
+        print(f'K = {parameters[0]}; Vmax = {parameters[1]}')
+        
+        # mostrando gráfico
+        p_teste = range(0,100)
+        v_teste = exponencial_simples(p_teste,*parameters)
+        plt.plot(p_teste,v_teste,'b:',label='ajustado')
+        plt.scatter(pressoes,volumes,label='dados')
+        plt.xlabel('Pressão [cmH2O]')
+        plt.ylabel('Volume [mL]')
+        plt.title(f'{animal}: K = {parameters[0]:.4f}; Vmax = {parameters[1]:.1f}')
+        plt.legend()
+        plt.show()
+    return parameters[0],parameters[1]
 
