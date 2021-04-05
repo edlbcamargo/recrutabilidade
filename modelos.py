@@ -9,6 +9,7 @@ from pathlib import Path   # para trabalhar com diretorios e arquivos
 import pickle              # para gravar e ler dados
 
 import matplotlib.pyplot as plt        # para gráficos
+import seaborn as sns                  # para gráficos com DataFrames
 
 from scipy.optimize import curve_fit   # para ajuste das curvas dos modelos
 
@@ -27,17 +28,19 @@ from scipy.interpolate import interp1d # para interpolar os pontos PV
 def sigmoidvenegas1(x, a, b, c, d):
     return a + b/(1 + np.exp(-(x-c)/d))
 
+########## paiva
 def sigmoidpaiva(x,TLC,k1,k2):
     return TLC/(1+(k1*np.exp(-k2*x)))
 
 # modificação nossa: incluindo offset
-def sigmoidpaivaoffset(x,TLC,k1,k2,offset):
+def sigmoidpaivaoffset1(x,TLC,k1,k2,offset):
     return TLC/(1+(k1*np.exp(-k2*x))) + offset
 
 # baseado no artigo original do paiva1975, e incluindo offset:
-def sigmoidpaivaoffset2(x,TLC,k1,k2,offset):
+def sigmoidpaivaoffset(x,TLC,k1,k2,offset):
     return TLC/(1+(k1*TLC*np.exp(-k2*x))) + offset
 
+######### venegas2
 def sigmoidvenegas2(x,TLC,B,k,c,d):
     return (TLC-(B*np.exp(-k*x)))/(1 + np.exp(-(x-c)/d))
 
@@ -45,6 +48,11 @@ def sigmoidvenegas2(x,TLC,B,k,c,d):
 def sigmoidvenegas2offset(x,TLC,B,k,c,d,offset):
     return (TLC-(B*np.exp(-k*x)))/(1 + np.exp(-(x-c)/d)) + offset
 
+######### murphy e engel
+def sigmoidmurphy(x,VM,Vm,k1,k2,k3): ### CUIDADO: P = f(V) !!!
+    return ( k1/(VM-x) ) + ( k2/(Vm-x) ) + k3
+
+######### recruit_unit
 # Modelo exponencial simples de curva PV pulmonar (Salazar 1964)
 # Volume = Vmax*(1-e^(-K*Paw))
 # Paw = pressão na via aérea
@@ -147,9 +155,26 @@ def Data2PV(data):
     volumes = data2[:,1]
     return pressures,volumes
 
+def encontra_volumes_limites_Murphy(parameters): ### no modelo de Murphy, P = f(V)
+    v_max = 1000
+    v_min = 0
+    # encontra limite superior:
+    for v in range(1,10000):
+        p = sigmoidmurphy(v,*parameters)
+        if p > 100:
+            v_max = v
+            break
+            
+    # encontra limite superior:
+    for v in range(1,-10000,-1):
+        p = sigmoidmurphy(v,*parameters)
+        if p < 0:
+            v_min = v
+            break
+    return int(v_min),int(v_max)
 
 # metodos : lm, dogbox, trf
-def testa_modelo(df, modelo, meu_p0 = [], metodo = 'lm', n_colunas = 4, texto = '', TLC_index = 0, meus_bounds = [], n_points_interp=0, debug=True): 
+def testa_modelo(df, modelo, meu_p0 = [], metodo = 'lm', n_colunas = 4, texto = '', TLC_index = 0, meus_bounds = [], n_points_interp=0, debug=True, invert_PV = False): 
     numero_de_casos = len(df)
     fig = plt.figure(figsize=(25,5*numero_de_casos/n_colunas))
     
@@ -170,16 +195,28 @@ def testa_modelo(df, modelo, meu_p0 = [], metodo = 'lm', n_colunas = 4, texto = 
             plt.scatter(p,v,label='interp',c='k',marker='x')
         plt.scatter(p_in,v_in,label='raw')
         try:
-            if (meu_p0 == []):                          # sem p0
-                if (meus_bounds == []): # sem bounds
-                    parameters, pcov = curve_fit(modelo, p, v, method=metodo)
-                else:                   # com bounds
-                    parameters, pcov = curve_fit(modelo, p, v, method=metodo, bounds=meus_bounds)
-            else:                                       # com p0
-                if (meus_bounds == []): # sem bounds
-                    parameters, pcov = curve_fit(modelo, p, v, method=metodo, p0 = meu_p0)
-                else:                   # com bounds
-                    parameters, pcov = curve_fit(modelo, p, v, method=metodo, p0 = meu_p0, bounds=meus_bounds)
+            if (invert_PV == False): ################################### V = f(P)
+                if (meu_p0 == []):                          # sem p0
+                    if (meus_bounds == []): # sem bounds
+                        parameters, pcov = curve_fit(modelo, p, v, method=metodo)
+                    else:                   # com bounds
+                        parameters, pcov = curve_fit(modelo, p, v, method=metodo, bounds=meus_bounds)
+                else:                                       # com p0
+                    if (meus_bounds == []): # sem bounds
+                        parameters, pcov = curve_fit(modelo, p, v, method=metodo, p0 = meu_p0)
+                    else:                   # com bounds
+                        parameters, pcov = curve_fit(modelo, p, v, method=metodo, p0 = meu_p0, bounds=meus_bounds)
+            else: ###################################################### P = f(V)
+                if (meu_p0 == []):                          # sem p0
+                    if (meus_bounds == []): # sem bounds
+                        parameters, pcov = curve_fit(modelo, v, p, method=metodo)
+                    else:                   # com bounds
+                        parameters, pcov = curve_fit(modelo, v, p, method=metodo, bounds=meus_bounds)
+                else:                                       # com p0
+                    if (meus_bounds == []): # sem bounds
+                        parameters, pcov = curve_fit(modelo, v, p, method=metodo, p0 = meu_p0)
+                    else:                   # com bounds
+                        parameters, pcov = curve_fit(modelo, v, p, method=metodo, p0 = meu_p0, bounds=meus_bounds)                    
             if debug:
                 textop = ""
                 for p in parameters:
@@ -188,20 +225,32 @@ def testa_modelo(df, modelo, meu_p0 = [], metodo = 'lm', n_colunas = 4, texto = 
                     else:
                         textop = textop + f'{p:.3f}' + ' '
                 print(f'Testando caso {caso_teste}: {df.iloc[caso_teste].Animal}: [{textop}]')
-            meu_p = range(1,100)
-            meu_v = modelo(meu_p,*parameters)
+            if (invert_PV == False): ################################### V = f(P)
+                meu_p = range(1,100)
+                meu_v = modelo(meu_p,*parameters)
+            else: ###################################################### P = f(V)
+                v_min,v_max = encontra_volumes_limites_Murphy(parameters)
+                meu_v = np.asarray(range(v_min,v_max))
+                meu_p = modelo(meu_v,*parameters)
             plt.plot(meu_p,meu_v,'r',label='fit')
             n_fitted = n_fitted + 1
             if ( df.iloc[caso_teste]["volume_esperado"] == 0 ):
                 plt.title(f'Case: {df.iloc[caso_teste].Animal}. TLC = {parameters[TLC_index]:.0f} mL')
             else:
                 v_esperado = df.iloc[caso_teste]["volume_esperado"]
-                erro = 100*(parameters[TLC_index]-v_esperado)/v_esperado
+                if (modelo.__name__ == 'sigmoidmurphy'):
+                    TLC = parameters[0] - parameters[1]
+                else:
+                    TLC = parameters[TLC_index]
+                erro = 100*(TLC-v_esperado)/v_esperado
                 erro_vec.append(erro)
-                plt.title(f'Case: {df.iloc[caso_teste].Animal}. TLC = {parameters[TLC_index]:.0f} mL. Error: {erro:.1f}%')
+                plt.title(f'Case: {df.iloc[caso_teste].Animal}. TLC = {TLC:.0f} mL. Error: {erro:.1f}%')
         except Exception as e:
             print(f'\tCaso {caso_teste} ({df.iloc[caso_teste].Animal}) deu erro...')
             plt.title(f'Case: {df.iloc[caso_teste].Animal}. Error fitting.')
+        #except:
+        #    print('erro')
+        #    pass
 
         plt.xlabel('Pressure [cmH2O]')
         plt.ylabel('Volume [mL]')
@@ -224,7 +273,7 @@ def testa_modelo(df, modelo, meu_p0 = [], metodo = 'lm', n_colunas = 4, texto = 
 
 # o mesmo que a função anterior, mas não mostra gráficos ou mensagens... para uso dentro de loops...
 # metodos : lm, dogbox, trf
-def testa_modelo_loop(df, modelo, meu_p0 = [], metodo = 'lm', n_colunas = 4, texto = '', TLC_index = 0, meus_bounds = [], n_points_interp=0): 
+def testa_modelo_loop(df, modelo, meu_p0 = [], metodo = 'lm', TLC_index = 0, meus_bounds = [], n_points_interp=0, invert_PV = False): 
     numero_de_casos = len(df)
     
     erro_vec = []
@@ -239,22 +288,38 @@ def testa_modelo_loop(df, modelo, meu_p0 = [], metodo = 'lm', n_colunas = 4, tex
         p, v = interpola_PV(p_in,v_in,n_points_interp)
 
         try:
-            if (meu_p0 == []):                          # sem p0
-                if (meus_bounds == []): # sem bounds
-                    parameters, pcov = curve_fit(modelo, p, v, method=metodo)
-                else:                   # com bounds
-                    parameters, pcov = curve_fit(modelo, p, v, method=metodo, bounds=meus_bounds)
-            else:                                       # com p0
-                if (meus_bounds == []): # sem bounds
-                    parameters, pcov = curve_fit(modelo, p, v, method=metodo, p0 = meu_p0)
-                else:                   # com bounds
-                    parameters, pcov = curve_fit(modelo, p, v, method=metodo, p0 = meu_p0, bounds=meus_bounds)
+            if (invert_PV == False): ################################### V = f(P)
+                if (meu_p0 == []):                          # sem p0
+                    if (meus_bounds == []): # sem bounds
+                        parameters, pcov = curve_fit(modelo, p, v, method=metodo)
+                    else:                   # com bounds
+                        parameters, pcov = curve_fit(modelo, p, v, method=metodo, bounds=meus_bounds)
+                else:                                       # com p0
+                    if (meus_bounds == []): # sem bounds
+                        parameters, pcov = curve_fit(modelo, p, v, method=metodo, p0 = meu_p0)
+                    else:                   # com bounds
+                        parameters, pcov = curve_fit(modelo, p, v, method=metodo, p0 = meu_p0, bounds=meus_bounds)
+            else: ###################################################### P = f(V)
+                if (meu_p0 == []):                          # sem p0
+                    if (meus_bounds == []): # sem bounds
+                        parameters, pcov = curve_fit(modelo, v, p, method=metodo)
+                    else:                   # com bounds
+                        parameters, pcov = curve_fit(modelo, v, p, method=metodo, bounds=meus_bounds)
+                else:                                       # com p0
+                    if (meus_bounds == []): # sem bounds
+                        parameters, pcov = curve_fit(modelo, v, p, method=metodo, p0 = meu_p0)
+                    else:                   # com bounds
+                        parameters, pcov = curve_fit(modelo, v, p, method=metodo, p0 = meu_p0, bounds=meus_bounds)                    
 
             if ( df.iloc[caso_teste]["volume_esperado"] == 0 ):
                 pass
             else:
                 v_esperado = df.iloc[caso_teste]["volume_esperado"]
-                erro = 100*(parameters[TLC_index]-v_esperado)/v_esperado
+                if (modelo.__name__ == 'sigmoidmurphy'):
+                    TLC = parameters[0] - parameters[1]
+                else:
+                    TLC = parameters[TLC_index]
+                erro = 100*(TLC-v_esperado)/v_esperado
                 erro_vec.append(erro)
                 
             n_fitted = n_fitted + 1
@@ -272,6 +337,109 @@ def testa_modelo_loop(df, modelo, meu_p0 = [], metodo = 'lm', n_colunas = 4, tex
         erro_norm = -1
         
     return erro_norm, erro_medio, n_fitted
+
+# o mesmo que a função anterior, mas solta resultado por caso individualmente
+# metodos : lm, dogbox, trf
+def testa_modelo_indiv(df, modelo, meu_p0 = [], metodo = 'lm', TLC_index = 0, meus_bounds = [], n_points_interp=0, limite_vol_max = 6000, limite_vol_min = 100, invert_PV = False): 
+
+    numero_de_casos = len(df)
+    
+    dfresult_lst = []
+    
+    for caso_teste in range(numero_de_casos):
+        
+        p_in = df.iloc[caso_teste].Pressoes
+        v_in = df.iloc[caso_teste].Volumes
+
+        # interpola pontos (se n_points_interp==0, a função não interpola)
+        p, v = interpola_PV(p_in,v_in,n_points_interp)
+        
+        flag_fitted = False
+        erro = 0
+        parameters = []
+
+        try:
+            if (invert_PV == False): ################################### V = f(P)
+                if (meu_p0 == []):                          # sem p0
+                    if (meus_bounds == []): # sem bounds
+                        parameters, pcov = curve_fit(modelo, p, v, method=metodo)
+                    else:                   # com bounds
+                        parameters, pcov = curve_fit(modelo, p, v, method=metodo, bounds=meus_bounds)
+                else:                                       # com p0
+                    if (meus_bounds == []): # sem bounds
+                        parameters, pcov = curve_fit(modelo, p, v, method=metodo, p0 = meu_p0)
+                    else:                   # com bounds
+                        parameters, pcov = curve_fit(modelo, p, v, method=metodo, p0 = meu_p0, bounds=meus_bounds)
+            else: ###################################################### P = f(V)
+                if (meu_p0 == []):                          # sem p0
+                    if (meus_bounds == []): # sem bounds
+                        parameters, pcov = curve_fit(modelo, v, p, method=metodo)
+                    else:                   # com bounds
+                        parameters, pcov = curve_fit(modelo, v, p, method=metodo, bounds=meus_bounds)
+                else:                                       # com p0
+                    if (meus_bounds == []): # sem bounds
+                        parameters, pcov = curve_fit(modelo, v, p, method=metodo, p0 = meu_p0)
+                    else:                   # com bounds
+                        parameters, pcov = curve_fit(modelo, v, p, method=metodo, p0 = meu_p0, bounds=meus_bounds)                    
+            
+            # Calcula erro
+            if ( df.iloc[caso_teste]["volume_esperado"] == 0 ):
+                pass
+            else:
+                v_esperado = df.iloc[caso_teste]["volume_esperado"]
+                if (modelo.__name__ == 'sigmoidmurphy'):
+                    TLC = parameters[0] - parameters[1]
+                else:
+                    TLC = parameters[TLC_index]
+                erro = 100*(TLC-v_esperado)/v_esperado
+                
+            # Verifica se fitou errado -> não fitou
+            if ( limite_vol_min <= TLC <= limite_vol_max ): # fitou alguma coisa coerente...
+                flag_fitted = True
+
+        except Exception as e:
+            pass
+        
+        index = []
+        caso = []
+        index.append('Animal')
+        caso.append(df.iloc[caso_teste].Animal)
+        index.append('Maneuver')
+        caso.append(df.iloc[caso_teste].Manobra)
+        index.append('n_steps')
+        caso.append(df.iloc[caso_teste].n_steps)
+        index.append('Pressures')
+        caso.append(df.iloc[caso_teste].Pressoes)
+        index.append('Volumes')
+        caso.append(df.iloc[caso_teste].Volumes)
+        index.append('Model')
+        caso.append(modelo.__name__)
+        index.append('Method')
+        caso.append(metodo)
+        index.append('TLC_index')
+        caso.append(TLC_index)
+        index.append('N_points_interp')
+        caso.append(n_points_interp)
+        index.append('p0')
+        caso.append(meu_p0)
+        index.append('bounds')
+        caso.append(meus_bounds)
+        index.append('fitted')
+        caso.append(flag_fitted)
+        index.append('parameters')
+        caso.append(parameters)
+        index.append('Vol_CT')
+        caso.append(df.iloc[caso_teste]["volume_esperado"])
+        index.append('error')
+        caso.append(erro)
+        casodf = pd.DataFrame(caso, index).T
+        dfresult_lst.append(casodf)
+        
+    dfresult = pd.concat(dfresult_lst, ignore_index=True)
+    # garante que algumas colunas serão tratadas como float
+    dfresult[['Vol_CT', 'error']] = dfresult[['Vol_CT', 'error']].astype(float)
+        
+    return dfresult
 
 # interpola vetores PV
 # n_points = número de pontos intermediários
@@ -293,20 +461,38 @@ class dados_modelos:
     TLC_index = ''
     p0 = ''
     bounds = ''
+    invert_PV = False
     
+def testa_varios_indiv(dadosdf, modelos, metodos = ('lm','trf','dogbox'), vec_interp = [0, 1, 2, 10, 20]):
+    df_lst = []
+    for mod in modelos:
+        print(f'Rodando {mod.model_function.__name__}')
+        for n_points_interp in vec_interp:
+            for metodo in metodos:
+                if (metodo == 'lm'): # 'lm' não aceita bounds
+                    dfresult = testa_modelo_indiv(dadosdf, mod.model_function, metodo = metodo, meu_p0 = mod.p0,
+                                                 TLC_index=mod.TLC_index, n_points_interp=n_points_interp, invert_PV=mod.invert_PV)
+                else:
+                    dfresult = testa_modelo_indiv(dadosdf, mod.model_function, metodo = metodo, meu_p0 = mod.p0,
+                                                 TLC_index=mod.TLC_index, meus_bounds=mod.bounds,
+                                                 n_points_interp=n_points_interp, invert_PV=mod.invert_PV)
+                df_lst.append(dfresult)
+    dadosdf = pd.concat(df_lst, ignore_index=True)
+    return dadosdf
+
 def testa_varios(dadosdf, modelos, metodos = ('lm','trf','dogbox'), vec_interp = [0, 1, 2, 10, 20]):
     df_lst = []
     for mod in modelos:
         print(f'Rodando {mod.model_function.__name__}')
         for n_points_interp in vec_interp:
             for metodo in metodos:
-                if (metodo == 'lm'):
+                if (metodo == 'lm'): # 'lm' não aceita bounds
                     erro_norm, erro_medio, n_fitted = testa_modelo_loop(dadosdf, mod.model_function, metodo = metodo, meu_p0 = mod.p0,
-                                                                 TLC_index=mod.TLC_index, n_points_interp=n_points_interp)
+                                                                 TLC_index=mod.TLC_index, n_points_interp=n_points_interp, invert_PV=mod.invert_PV)
                 else:
                     erro_norm, erro_medio, n_fitted = testa_modelo_loop(dadosdf, mod.model_function, metodo = metodo, meu_p0 = mod.p0,
                                                                  TLC_index=mod.TLC_index, meus_bounds=mod.bounds,
-                                                                 n_points_interp=n_points_interp)
+                                                                 n_points_interp=n_points_interp, invert_PV=mod.invert_PV)
                 caso = []
                 caso.append(mod.model_function.__name__)
                 caso.append(metodo)
@@ -317,4 +503,6 @@ def testa_varios(dadosdf, modelos, metodos = ('lm','trf','dogbox'), vec_interp =
                 casodf = pd.DataFrame(caso, index = ['Modelo', 'Método', 'N_points_interp', 'Norma erro', 'Erro médio', 'n_fitted']).T
                 df_lst.append(casodf)
     dadosdf = pd.concat(df_lst, ignore_index=True)
+    dadosdf[['Norma erro', 'Erro médio']] = dadosdf[['Norma erro', 'Erro médio']].astype(float)
+    dadosdf['|Erro médio|'] = dadosdf['Erro médio'].abs()
     return dadosdf
