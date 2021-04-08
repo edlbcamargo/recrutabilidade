@@ -25,11 +25,11 @@ def find_best_b(ser, b_percentage_range:tuple=(0.95,1.05), step:float=0.0001):
     
     #Especifico para sigmoid
     # sigmoid(x, a, b, c, d): a + b/(1 + np.exp(-(x-c)/d))   
-    a, b, c, d = params 
+    a, b, c, d, _ = params 
     
     b_esperado = np.exp(c/d)/(b)
     
-    volume_ZEEP_esperado = fit_func(0, *params)
+    volume_ZEEP_esperado = fit_func(np.array([0]), *params)
     
     #print( (b_esperado,[0,volume_ZEEP_esperado]) )
     
