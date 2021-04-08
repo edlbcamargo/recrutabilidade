@@ -29,14 +29,15 @@ def calcula_volume_ar(pulmao,v_voxel):
     return Var_vox
 
 
-def calcula_volume_pasta(pasta_in, animal='', mostraImagens = False, threshold = 200):
-    imagens_in = lePastaDICOM(pasta_in)
+def calcula_volume_pasta(pasta_in, animal='', mostraImagens = False, threshold = 200, debug=True):
+    imagens_in = lePastaDICOM(pasta_in,debug=debug)
     nl,nc,nimagens = imagens_in.GetSize()
     slice_img = int(nimagens/2)
     df_in = SegmentaPulmaoCompleto(imagens_in, threshold = threshold)
     v_voxel_mL_in = np.prod(imagens_in.GetSpacing())/1000
     volume_ar_in = calcula_volume_ar(df_in.imagem_pulmao.values,v_voxel_mL_in)
-    print(f'{volume_ar_in} mL')
+    if debug:
+        print(f'{volume_ar_in} mL')
     if mostraImagens:
         fig = mostraCortesDICOM(imagens_in,slice_img,8,colorbar=True)
         _= fig.suptitle('TC - ' + animal, fontsize=16)
@@ -48,7 +49,7 @@ def calcula_volume_pasta(pasta_in, animal='', mostraImagens = False, threshold =
 '''
 Lê uma pasta com arquivos DICOM no formato .ima ou .dcm
 '''
-def lePastaDICOM (path_dicom):
+def lePastaDICOM (path_dicom, debug=True):
     
     reader = sitk.ImageSeriesReader()
     dicom_names = reader.GetGDCMSeriesFileNames(path_dicom) 
@@ -56,7 +57,8 @@ def lePastaDICOM (path_dicom):
     
     image = reader.Execute() 
     
-    print(f'Size: {image.GetSize()}; Spacing: {image.GetSpacing()}')
+    if debug:
+        print(f'Size: {image.GetSize()}; Spacing: {image.GetSpacing()}')
     
     return image
 
@@ -177,7 +179,8 @@ def SegmentaPulmaoCompleto(imagens, threshold = 200, debug = False,
                              altura_limite_aerado = -1, altura_pulmao=0.5, altura_traqueia=0.8):
     biblioteca = {'imagem':[], 'mascara_ar':[], 'imagem_ar':[]}
     nl,nc,nimagens = imagens.GetSize()
-    print(f'Tamanho: {nl} {nc} {nimagens}')
+    if debug:
+        print(f'Tamanho: {nl} {nc} {nimagens}')
     for idx in range(nimagens):
         imgct_Image = imagens[:,:,idx]
         imgct = sitk.GetImageFromArray(sitk.GetArrayFromImage(imgct_Image)) # VERIFICAR PORQUE EH NECESSARIO...
@@ -214,9 +217,16 @@ def SeparaTecidoConectado(mascaras,label,altura=0.5):
     nc,nl,nimagens = mascaras_Image.GetSize()
     
     # Encontra semente. A semente é o primeiro pixel do valor de 'label' em um slice a uma certa altura:
-    sliceCentro = int(nimagens*altura)
-    imagem_centro = I2A(mascaras_Image[:,:,sliceCentro])
-    result = np.where(imagem_centro == label)
+    result = ([],[])
+
+    while len(result[0])==0:
+        sliceCentro = int(nimagens*altura)
+        imagem_centro = I2A(mascaras_Image[:,:,sliceCentro])
+        result = np.where(imagem_centro == label)
+        altura = altura + 0.15 # se não encontra o label, procura mais para cima
+        if altura >= 1.0:
+            print('ERRO: SeparaTecidoConectado: label não encontrado nas imagens!')
+            break
     seed_lst = [(int(result[1][0]), int(result[0][0]), int(sliceCentro))] # cuidado! indices devem estar invertidos
     mascara_tecido_Image = sitk.ConnectedThreshold(mascaras_Image,
                                                    seedList=seed_lst,
@@ -389,8 +399,8 @@ def SegmentaPulmaoCompletoImg(imagem, threshold = 200, debug = False,
     # imprime informações de debug
     if debug:
         print('Altura_limite_aerado utilizada: {}'.format(altura_limite_aerado))
-        debuga_imagens((imagem_fundo,imagem_fundo_com_ossos,imagem_fechamento_grande_dilatado,
-                    pulmao,imagem_considerando_aerado,imagem_abertura))
+        #debuga_imagens((imagem_fundo,imagem_fundo_com_ossos,imagem_fechamento_grande_dilatado,
+        #            pulmao,imagem_considerando_aerado,imagem_abertura))
         
     # pulmão completo
     mask_pulmao_completo = 1-imagem_abertura
@@ -490,5 +500,68 @@ def ajusta_exponencial_recrutamento(pasta_pos, pasta_R3, animal, estimator = 'lm
         plt.title(f'{animal}: K = {parameters[0]:.4f}; Vmax = {parameters[1]:.1f}')
         plt.legend()
         plt.show()
-    return parameters[0],parameters[1]
+    return parameters[0], parameters[1], volumes, pressoes
+
+###############################################################################################
+###############################################################################################
+###############################################################################################
+###############################################################################################
+# Extraindo informações das curvas PV a partir das CTs volumétricas
+
+
+class dadosCts:
+    def __init__(self): # garante variáveis não compartilhadas na classe
+        self.nome = ''
+        self.CTs = []
+        self.pressoes = []
+        self.volumes = []
+        self.CTs_rec = []
+        self.pressoes_rec = [24, 45]
+    
+    
+def calcula_volumes_CTs_df(mra_lst, debug=True):
+    dfresult_lst = []
+    for mra in mra_lst:
+        if debug: print(f'{mra.nome}: {mra.pressoes}')
+            
+        vols = []
+        for pasta_ct in mra.CTs:
+            if debug: print(f'\t{pasta_ct}')
+            volume_ar,_,_ = calcula_volume_pasta(pasta_ct, animal=mra.nome, debug=False)
+            vols.append(volume_ar)
+            
+        K,TLC, vol_rec, press_rec = ajusta_exponencial_recrutamento(mra.CTs_rec[0], mra.CTs_rec[1], mra.nome, pressoes = np.append(0,mra.pressoes_rec), debug=False)
+
+        index = []
+        caso = []
+        index.append('Animal')
+        caso.append(mra.nome)
+        index.append('Pressure')
+        caso.append(mra.pressoes)
+        index.append('CT Volume')
+        caso.append(vols)
+        index.append('Volume (Luva)')
+        caso.append(mra.volumes)
+        index.append('Estimated TLC')
+        caso.append(TLC)
+        index.append('Estimated K')
+        caso.append(K)
+        index.append('CT_Volume (rec)')
+        caso.append(vol_rec)
+        index.append('Pressure (rec)')
+        caso.append(press_rec)
+        index.append('CT folders')
+        caso.append(mra.CTs)
+        index.append('CT folders (rec)')
+        caso.append(mra.CTs_rec)
+        
+        casodf = pd.DataFrame(caso, index).T
+        dfresult_lst.append(casodf)
+    
+    dfresult = pd.concat(dfresult_lst, ignore_index=True)
+    float_columns_list = ['Estimated TLC', 'Estimated K']
+    dfresult[float_columns_list] = dfresult[float_columns_list].astype(float) # garante que algumas colunas serão tratadas como float
+    
+    return dfresult
+
 
