@@ -52,6 +52,11 @@ def sigmoidvenegas2offset(x,TLC,B,k,c,d,offset):
 def sigmoidmurphy(x,VM,Vm,k1,k2,k3): ### CUIDADO: P = f(V) !!!
     return ( k1/(VM-x) ) + ( k2/(Vm-x) ) + k3
 
+# modificação nossa: incluindo offset
+######### murphy e engel
+def sigmoidmurphyoffset(x,TLC,offset,k1,k2,k3): ### CUIDADO: P = f(V) !!!
+    return ( k1/((TLC+offset)-x) ) + ( k2/(offset-x) ) + k3
+
 ######### recruit_unit
 # Modelo exponencial simples de curva PV pulmonar (Salazar 1964)
 # Volume = Vmax*(1-e^(-K*Paw))
@@ -155,12 +160,12 @@ def Data2PV(data):
     volumes = data2[:,1]
     return pressures,volumes
 
-def encontra_volumes_limites_Murphy(parameters): ### no modelo de Murphy, P = f(V)
+def encontra_volumes_limites_Murphy(parameters, modelo=sigmoidmurphy): ### no modelo de Murphy, P = f(V)
     v_max = 1000
     v_min = 0
     # encontra limite superior:
     for v in range(1,10000):
-        p = sigmoidmurphy(v,*parameters)
+        p = modelo(v,*parameters)
         if p > 100:
             v_max = v
             break
@@ -229,7 +234,7 @@ def testa_modelo(df, modelo, meu_p0 = [], metodo = 'lm', n_colunas = 4, texto = 
                 meu_p = range(1,100)
                 meu_v = modelo(meu_p,*parameters)
             else: ###################################################### P = f(V)
-                v_min,v_max = encontra_volumes_limites_Murphy(parameters)
+                v_min,v_max = encontra_volumes_limites_Murphy(parameters,modelo=modelo)
                 meu_v = np.asarray(range(v_min,v_max))
                 meu_p = modelo(meu_v,*parameters)
             plt.plot(meu_p,meu_v,'r',label='fit')
