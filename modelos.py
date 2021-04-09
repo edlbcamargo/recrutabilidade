@@ -40,7 +40,7 @@ def sigmoidvenegas2(x,TLC,B,k,c,d):
 
 # modificação nossa: incluindo offset
 def sigmoidvenegas2offset(x,TLC,B,k,c,d,offset):
-    return (TLC-(B*np.exp(-k*x)))/(1 + np.exp(-(x-c)/d)) + offset
+    return (TLC-(B*np.exp(-k*x)))/(1 - np.exp(-(x-c)/d)) + offset #alterei para ficar igual ao artigo
 
 ######### murphy e engel
 def sigmoidmurphy(x,VM,Vm,k1,k2,k3): ### CUIDADO: P = f(V) !!!
