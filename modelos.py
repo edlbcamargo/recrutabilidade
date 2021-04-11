@@ -40,12 +40,14 @@ def sigmoidvenegas2(x,TLC,B,k,c,d):
 
 # modificação nossa: incluindo offset
 def sigmoidvenegas2offset(x,TLC,B,k,c,d,offset):
-    return (TLC-(B*np.exp(-k*x)))/(1 - np.exp(-(x-c)/d)) + offset #alterei para ficar igual ao artigo
+    return (TLC-(B*np.exp(-k*x)))/(1 + np.exp(-(x-c)/d)) + offset #alterei para funcionar como sigmoide.
 
+# VM - Vm = TLC
 ######### murphy e engel
 def sigmoidmurphy(x,VM,Vm,k1,k2,k3): ### CUIDADO: P = f(V) !!!
     return ( k1/(VM-x) ) + ( k2/(Vm-x) ) + k3
 
+'''
 # modelo de unidades recrutadas com erf()
 # ajustando a função para uma entrada array (para curve_fit)
 def meu_erf_vec(Paw,mi,sigma):
@@ -62,7 +64,7 @@ def sigmoid_recruit_units(Paw,K,Vmax,mi,sigma,offset):
     V = Vmax_recrutado*(1-np.exp(-K*Paw)) + offset
     return V
 
-
+'''
 ############################################################### FUNÇÕES:
 
 '''
@@ -182,8 +184,7 @@ def interpola_PV(pressoes,volumes,n_points=0):
 # debug: para printar resultados
 # invert_PV: para inverter xdata e ydata no curvefit se aplicável (como no caso do modelo de Murhphy e Engel)
 
-def testa_modelo(df, modelo, meu_p0 = [], metodo = 'lm', n_colunas = 4, texto = '', TLC_index = 0, meus_bounds = [], n_points_interp=0, debug=True, invert_PV = False):
-    
+def testa_modelo(df, modelo, meu_p0 = [], metodo = 'lm', n_colunas = 4, texto = '', TLC_index = 0, meus_bounds = [], n_points_interp=0, debug=True, invert_PV = False, df_final=None):
     numero_de_casos = len(df)
     fig = plt.figure(figsize=(25,5*numero_de_casos/n_colunas))
     
@@ -192,12 +193,18 @@ def testa_modelo(df, modelo, meu_p0 = [], metodo = 'lm', n_colunas = 4, texto = 
     
     for caso_teste in range(numero_de_casos):
         
+        df.at[caso_teste, 'Modelo'] = modelo.__name__
+        df.at[caso_teste, 'Metodo'] = metodo
+        df.at[caso_teste, 'Ajustado'] = False
+        df.at[caso_teste, 'Erro'] = 0
+        df.at[caso_teste, "n_pontos_interpolacao"] = n_points_interp
+        
         p_in = df.iloc[caso_teste].Pressoes
         v_in = df.iloc[caso_teste].Volumes
-
+        
         # interpola pontos (se n_points_interp==0, a função não interpola)
         p, v = interpola_PV(p_in,v_in,n_points_interp)
-
+        
         plt.subplot(int(numero_de_casos/n_colunas)+1,n_colunas,caso_teste+1)
         fig.tight_layout()
         if (n_points_interp > 0):
@@ -247,6 +254,7 @@ def testa_modelo(df, modelo, meu_p0 = [], metodo = 'lm', n_colunas = 4, texto = 
                 meu_p = modelo(meu_v,*parameters)
             plt.plot(meu_p,meu_v,'r',label='fit')
             n_fitted = n_fitted + 1 #para contar os casos que fitaram
+            df.at[caso_teste, 'Ajustado'] = True
             
             # Para o título do gráfico
             if ( df.iloc[caso_teste]["volume_esperado"] == 0 ):
@@ -261,10 +269,11 @@ def testa_modelo(df, modelo, meu_p0 = [], metodo = 'lm', n_colunas = 4, texto = 
                 # Para cálculo do erro - TLC = TLC calculado pelo curvefit    
                 erro = 100*(TLC-v_esperado)/v_esperado
                 erro_vec.append(erro)
-                plt.title(f'Case: {df.iloc[caso_teste].Animal}. TLC = {TLC:.0f} mL. Error: {erro:.1f}%')
+                df.at[caso_teste, 'Erro'] = erro
+                plt.title(f'Case: {df.iloc[caso_teste].Animal}. TLC = {TLC:.0f} mL. Error: {erro:.1f}% Steps:{df.iloc[caso_teste].n_steps}')
         except Exception as e:
-            print(f'\tCaso {caso_teste} ({df.iloc[caso_teste].Animal}) deu erro...')
-            plt.title(f'Case: {df.iloc[caso_teste].Animal}. Error fitting.')
+            print(f'\tCaso {caso_teste} ({df.iloc[caso_teste].Animal}) deu erro... Steps:{df.iloc[caso_teste].n_steps}')
+            plt.title(f'Case: {df.iloc[caso_teste].Animal}. Error fitting. Steps:{df.iloc[caso_teste].n_steps}')
       
 
         plt.xlabel('Pressure [cmH2O]')
@@ -282,14 +291,18 @@ def testa_modelo(df, modelo, meu_p0 = [], metodo = 'lm', n_colunas = 4, texto = 
         erro_medio = -1
         erro_norm = -1
         
+    if df_final is not None:
+        df_final = df_final.append({'modelo': modelo.__name__, 'metodo': metodo, 'norma_do_erro': erro_norm, 'erro_medio': erro_medio, 'ajustados': n_fitted, 'n_pontos_interpolacao': n_points_interp}, ignore_index=True)
+        
     if debug:
         print(f'Norma(erro): {erro_norm:.1f}. Erro médio: {erro_medio:.2f}%. Ajustados: {n_fitted}.')
+        
     
-    return erro_norm, erro_medio, n_fitted
+    return erro_norm, erro_medio, n_fitted, df_final
 
 ################### PAREI AQUI #######################
 
-"""
+'''
 # o mesmo que a função anterior, mas não mostra gráficos ou mensagens... para uso dentro de loops...
 # metodos : lm, dogbox, trf
 def testa_modelo_loop(df, modelo, meu_p0 = [], metodo = 'lm', TLC_index = 0, meus_bounds = [], n_points_interp=0, invert_PV = False): 
@@ -356,6 +369,8 @@ def testa_modelo_loop(df, modelo, meu_p0 = [], metodo = 'lm', TLC_index = 0, meu
         erro_norm = -1
         
     return erro_norm, erro_medio, n_fitted
+
+'''
 
 # o mesmo que a função anterior, mas solta resultado por caso individualmente
 # metodos : lm, dogbox, trf
@@ -512,6 +527,6 @@ def testa_varios(dadosdf, modelos, metodos = ('lm','trf','dogbox'), vec_interp =
     dadosdf[['Norma erro', 'Erro médio']] = dadosdf[['Norma erro', 'Erro médio']].astype(float)
     dadosdf['|Erro médio|'] = dadosdf['Erro médio'].abs()
     return dadosdf
-    """
+  
 
 
