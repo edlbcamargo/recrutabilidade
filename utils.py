@@ -21,11 +21,14 @@ def calc_fit_error(fit_func, params, xdata, ydata):
 def find_best_b(ser, b_percentage_range:tuple=(0.95,1.05), step:float=0.0001):
    
     params = ser["param"]
-    fit_func = ser["model"].function
+    if 'model' in ser:
+        fit_func = ser["model"].function
+    else:
+        fit_func = ser["function"]
     
     #Especifico para sigmoid
     # sigmoid(x, a, b, c, d): a + b/(1 + np.exp(-(x-c)/d))   
-    a, b, c, d, _ = params 
+    a, b, c, d, *_ = params 
     
     b_esperado = np.exp(c/d)/(b)
     

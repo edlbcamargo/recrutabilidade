@@ -48,6 +48,10 @@ def sigmoidvenegas2(x,TLC,B,k,c,d):
 def sigmoidvenegas2offset(x,TLC,B,k,c,d,offset):
     return (TLC-(B*np.exp(-k*x)))/(1 + np.exp(-(x-c)/d)) + offset
 
+# sinal original: incorreto, pois aqui quando P -> c, V -> infty
+def sigmoidvenegas2original(x,TLC,B,k,c,d):
+    return (TLC-(B*np.exp(-k*x)))/(1 - np.exp(-(x-c)/d))
+
 ######### murphy e engel
 def sigmoidmurphy(x,VM,Vm,k1,k2,k3): ### CUIDADO: P = f(V) !!!
     return ( k1/(VM-x) ) + ( k2/(Vm-x) ) + k3
@@ -160,20 +164,20 @@ def Data2PV(data):
     volumes = data2[:,1]
     return pressures,volumes
 
-def encontra_volumes_limites_Murphy(parameters, modelo=sigmoidmurphy): ### no modelo de Murphy, P = f(V)
+def encontra_volumes_limites_Murphy(parameters, modelo=sigmoidmurphy, pmax=100, pmin=0): ### no modelo de Murphy, P = f(V)
     v_max = 1000
     v_min = 0
     # encontra limite superior:
     for v in range(1,10000):
         p = modelo(v,*parameters)
-        if p > 100:
+        if p > pmax:
             v_max = v
             break
             
     # encontra limite superior:
     for v in range(1,-10000,-1):
         p = sigmoidmurphy(v,*parameters)
-        if p < 0:
+        if p < pmin:
             v_min = v
             break
     return int(v_min),int(v_max)
@@ -345,7 +349,9 @@ def testa_modelo_loop(df, modelo, meu_p0 = [], metodo = 'lm', TLC_index = 0, meu
 
 # o mesmo que a função anterior, mas solta resultado por caso individualmente
 # metodos : lm, dogbox, trf
-def testa_modelo_indiv(df, modelo, meu_p0 = [], metodo = 'lm', TLC_index = 0, meus_bounds = [], n_points_interp=0, limite_vol_max = 6000, limite_vol_min = 100, invert_PV = False): 
+def testa_modelo_indiv(df, modelo, meu_p0 = [], metodo = 'lm', TLC_index = 0, meus_bounds = [],
+                       n_points_interp=0, limite_vol_max = 6000, limite_vol_min = 100,
+                       erro_factor_limit = 70, invert_PV = False): 
 
     numero_de_casos = len(df)
     
@@ -362,6 +368,8 @@ def testa_modelo_indiv(df, modelo, meu_p0 = [], metodo = 'lm', TLC_index = 0, me
         flag_fitted = False
         erro = 0
         parameters = []
+        erro_fit = 0
+        erro_factor = 0
 
         try:
             if (invert_PV == False): ################################### V = f(P)
@@ -398,9 +406,22 @@ def testa_modelo_indiv(df, modelo, meu_p0 = [], metodo = 'lm', TLC_index = 0, me
                     TLC = parameters[TLC_index]
                 erro = 100*(TLC-v_esperado)/v_esperado
                 
+            # Calcula erro do fit
+            if (invert_PV == False): ################################### V = f(P)
+                v_fit = modelo(p_in,*parameters)
+                erro_fit = np.linalg.norm(v_fit-v_in)
+                erro_factor = erro_fit/np.power(len(v_in),0.5)
+            else: ###################################################### P = f(V)
+                p_fit = modelo(v_in,*parameters)
+                erro_fit = np.linalg.norm(p_fit-p_in)
+                erro_factor = (erro_fit/np.power(len(v_in),0.5))*(( max(v_in)-min(v_in) )/( max(p_in)-min(p_in) ))
+            
             # Verifica se fitou errado -> não fitou
             if ( limite_vol_min <= TLC <= limite_vol_max ): # fitou alguma coisa coerente...
                 flag_fitted = True
+            if ( erro_factor > erro_factor_limit ):
+                flag_fitted = False
+
 
         except Exception as e:
             pass
@@ -437,6 +458,12 @@ def testa_modelo_indiv(df, modelo, meu_p0 = [], metodo = 'lm', TLC_index = 0, me
         caso.append(df.iloc[caso_teste]["volume_esperado"])
         index.append('error')
         caso.append(erro)
+        index.append('fit error')
+        caso.append(erro_fit)
+        index.append('error factor')
+        caso.append(erro_factor)
+        index.append('Raw data')
+        caso.append(df.iloc[caso_teste].Dados)
         casodf = pd.DataFrame(caso, index).T
         dfresult_lst.append(casodf)
         
