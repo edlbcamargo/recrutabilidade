@@ -514,6 +514,7 @@ class dadosCts:
         self.nome = ''
         self.CTs = []
         self.pressoes = []
+        self.peeps = []
         self.volumes = []
         self.CTs_rec = []
         self.pressoes_rec = [24, 45]
@@ -538,6 +539,8 @@ def calcula_volumes_CTs_df(mra_lst, debug=True):
         caso.append(mra.nome)
         index.append('Pressure')
         caso.append(mra.pressoes)
+        index.append('PEEPs')
+        caso.append(mra.peeps)
         index.append('CT Volume')
         caso.append(vols)
         index.append('Volume (Luva)')

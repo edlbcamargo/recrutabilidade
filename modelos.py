@@ -370,6 +370,7 @@ def testa_modelo_indiv(df, modelo, meu_p0 = [], metodo = 'lm', TLC_index = 0, me
         parameters = []
         erro_fit = 0
         erro_factor = 0
+        tlc_eit = 0
 
         try:
             if (invert_PV == False): ################################### V = f(P)
@@ -395,15 +396,17 @@ def testa_modelo_indiv(df, modelo, meu_p0 = [], metodo = 'lm', TLC_index = 0, me
                     else:                   # com bounds
                         parameters, pcov = curve_fit(modelo, v, p, method=metodo, p0 = meu_p0, bounds=meus_bounds)                    
             
+            if (modelo.__name__ == 'sigmoidmurphy'):
+                TLC = parameters[0] - parameters[1]
+            else:
+                TLC = parameters[TLC_index]
+            tlc_eit = TLC
+            
             # Calcula erro
             if ( df.iloc[caso_teste]["volume_esperado"] == 0 ):
                 pass
             else:
                 v_esperado = df.iloc[caso_teste]["volume_esperado"]
-                if (modelo.__name__ == 'sigmoidmurphy'):
-                    TLC = parameters[0] - parameters[1]
-                else:
-                    TLC = parameters[TLC_index]
                 erro = 100*(TLC-v_esperado)/v_esperado
                 
             # Calcula erro do fit
@@ -444,6 +447,8 @@ def testa_modelo_indiv(df, modelo, meu_p0 = [], metodo = 'lm', TLC_index = 0, me
         caso.append(metodo)
         index.append('TLC_index')
         caso.append(TLC_index)
+        index.append('TLC_eit')
+        caso.append(tlc_eit)
         index.append('N_points_interp')
         caso.append(n_points_interp)
         index.append('p0')
